@@ -163,15 +163,8 @@ def get_days_left(program: Dict[str, Any]) -> int:
         
     try:
         dt_end = datetime.strptime(end_at, "%Y-%m-%d")
-        dt_now = datetime.now()
-        # D-day: end - now
-        delta = dt_end - dt_now
-        return delta.days + 1 # delta.days floors. If today is 1st, end is 1st, delta is 0?
-        # Typically D-0 means today.
-        # If now is 12:00, end is 00:00? No, date comparison.
-        # Let's use date objects.
         d_end = dt_end.date()
-        d_now = dt_now.date()
+        d_now = datetime.now().date()
         return (d_end - d_now).days
     except:
         return None

@@ -102,7 +102,6 @@ async def run_once():
                 # Format: YYYY-MM-DD HH:MM:SS or YYYY-MM-DD
                 # If len is 10, add time.
                 if len(created_str) == 10:
-                    created_dt = datetime.strptime(created_str, "%Y-01-01") # Wait, format? usually YYYY-MM-DD
                     created_dt = datetime.strptime(created_str, "%Y-%m-%d")
                 else:
                     created_dt = datetime.strptime(created_str, "%Y-%m-%d %H:%M:%S")
@@ -127,18 +126,17 @@ async def run_once():
     
     today_date = datetime.now().strftime('%Y-%m-%d %H:%M')
     
+    # 4. Send Telegram
+    token = os.getenv("TELEGRAM_BOT_TOKEN", "").strip()
+    chat_id = os.getenv("TELEGRAM_ALLOWED_CHAT_ID", "").strip()
+
     if not top_items:
         logger.info("No recommendations found.")
-        # Send a "No items" message so user knows bot ran.
         if token and chat_id:
             bot = Bot(token=token)
             msg = f"📉 **[{today_date}] 업데이트 없음**\n\n조건에 맞는 새로운 지원사업/행사가 없습니다.\n(수집: 지원 {len(supports)}건, 행사 {len(events)}건)"
             await bot.send_message(chat_id=chat_id, text=msg)
         return
-
-    # 4. Send Telegram
-    token = os.getenv("TELEGRAM_BOT_TOKEN", "").strip()
-    chat_id = os.getenv("TELEGRAM_ALLOWED_CHAT_ID", "").strip()
     
     if token and chat_id:
         bot = Bot(token=token)
