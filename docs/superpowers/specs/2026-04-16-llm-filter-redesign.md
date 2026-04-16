@@ -94,7 +94,8 @@ bizinfo API는 최근 공고 ~100건을 반환하며, 대부분은 이전 실행
 
 ```python
 # 파일: data/notified_keys.json
-# 내용: {"keys": ["support:12345", "event:67890", ...], "updated_at": "2026-04-16T08:00:00"}
+# 내용: {"entries": {"support:12345": "2026-04-16T08:00:00", "event:67890": "2026-04-15T18:00:00"}, "updated_at": "2026-04-16T08:00:00"}
+# 각 키의 값은 최초 기록 시각 (90일 초과 시 자동 정리)
 ```
 
 - 매 실행 시작: GitHub Actions cache에서 `data/notified_keys.json` 복원
