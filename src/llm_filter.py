@@ -77,7 +77,7 @@ def stage1_quick_filter(programs: list[dict]) -> list[dict]:
 
         try:
             response = client.models.generate_content(
-                model="gemini-2.0-flash",
+                model="gemini-2.5-flash",
                 contents=prompt,
                 config={
                     "response_mime_type": "application/json",
@@ -124,7 +124,7 @@ def stage2_assess(program: dict, detail_text: str) -> Assessment:
 
     try:
         response = client.models.generate_content(
-            model="gemini-2.0-flash",
+            model="gemini-2.5-flash",
             contents=prompt,
             config={
                 "response_mime_type": "application/json",
