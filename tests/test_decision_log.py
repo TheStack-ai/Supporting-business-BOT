@@ -7,7 +7,7 @@ def test_log_decision_creates_jsonl():
     path = tempfile.mktemp(suffix=".jsonl")
     try:
         log_decision(
-            program={"program_key": "support:123", "title": "테스트 공고"},
+            program={"program_key": "support:123", "source": "bizinfo", "title": "테스트 공고"},
             grade="A",
             reason="자격 충족",
             stage="stage2",
@@ -17,6 +17,7 @@ def test_log_decision_creates_jsonl():
             line = f.readline()
         entry = json.loads(line)
         assert entry["key"] == "support:123"
+        assert entry["source"] == "bizinfo"
         assert entry["grade"] == "A"
         assert entry["reason"] == "자격 충족"
         assert entry["stage"] == "stage2"

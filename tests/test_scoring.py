@@ -1,6 +1,6 @@
 import pytest
 import json
-from src.filters import calculate_score, is_recommended
+from src.filters import calculate_score, is_recommended, is_obviously_irrelevant
 from datetime import datetime, timedelta
 
 @pytest.fixture
@@ -63,3 +63,63 @@ def test_exclude(profile):
     recommended, score, reasons = is_recommended(program, profile)
     assert not recommended
     assert score == 0
+
+
+def test_hard_filter_rejects_obvious_consumer_sector():
+    program = {
+        "title": "K-수출전략품목 참여기업 모집(뷰티)",
+        "summary_raw": "화장품 등 유망 소비재 글로벌 진출",
+    }
+
+    rejected, reason = is_obviously_irrelevant(program)
+
+    assert rejected
+    assert "뷰티" in reason
+
+
+def test_hard_filter_rejects_consumer_channel_without_relevance():
+    program = {
+        "title": "TV홈쇼핑 입점지원 사업",
+        "summary_raw": "온라인쇼핑몰 판매 지원",
+    }
+
+    rejected, reason = is_obviously_irrelevant(program)
+
+    assert rejected
+    assert "홈쇼핑" in reason
+
+
+def test_hard_filter_keeps_mro_public_procurement_notice():
+    program = {
+        "title": "MRO 납품 중소기업 공공조달 입찰 컨설팅",
+        "summary_raw": "공공조달 시장 진입 지원",
+    }
+
+    rejected, reason = is_obviously_irrelevant(program)
+
+    assert not rejected
+    assert reason == ""
+
+
+def test_hard_filter_rejects_consumer_storefront_notice():
+    program = {
+        "title": "스마트 플래그십 스토어(소담상회 with 무신사)",
+        "summary_raw": "스토어 내 제품 체험·전시 공간 제공",
+    }
+
+    rejected, reason = is_obviously_irrelevant(program)
+
+    assert rejected
+    assert "무신사" in reason
+
+
+def test_hard_filter_keeps_trial_purchase_notice():
+    program = {
+        "title": "동반성장몰 시범구매 제품 연계",
+        "summary_raw": "시범구매 및 상생협력제품 판로지원",
+    }
+
+    rejected, reason = is_obviously_irrelevant(program)
+
+    assert not rejected
+    assert reason == ""

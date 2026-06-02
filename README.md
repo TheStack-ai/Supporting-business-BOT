@@ -1,7 +1,7 @@
-# 기업마당 텔레그램 봇 (GitHub Actions 버전)
+# 지원사업 공고 텔레그램 봇 (GitHub Actions 버전)
 
-기업마당의 지원사업 및 행사 정보를 수집하여 텔레그램으로 알림을 보내주는 봇입니다.
-**GitHub Actions**를 통해 매일 6시간마다 자동으로 실행됩니다.
+기업마당과 판판대로의 지원사업 및 행사 정보를 수집하여 텔레그램으로 알림을 보내주는 봇입니다.
+**GitHub Actions**를 통해 매일 2회(08:00, 18:00 KST) 자동으로 실행됩니다.
 
 ## 🚀 설정 방법 (GitHub Secrets)
 
@@ -25,6 +25,22 @@
 | `PROFILE_KEYWORDS` | 포함 키워드(가산점) | `["창업", "수출"]` | `[]` |
 | `PROFILE_EXCLUDES` | 제외 키워드 | `["교육", "세미나"]` | `[]` |
 | `PROFILE_MIN_SCORE` | 최소 알림 점수 | 숫자 (예: `50`) | `60` |
+
+### 선택 키 (Optional: 수집 설정)
+
+| 이름 | 설명 | 기본값 |
+|---|---|---|
+| `BIZINFO_SEARCH_COUNT` | 기업마당 API 1페이지 요청 건수 | `100` |
+| `BIZINFO_MAX_PAGES` | 기업마당 API 최대 조회 페이지 수 | `5` |
+| `FANFANDAERO_ENABLED` | 판판대로 수집 사용 여부 (`false`면 비활성화) | `true` |
+| `FANFANDAERO_PAGE_UNIT` | 판판대로 1페이지 요청 건수 | `100` |
+| `FANFANDAERO_MAX_PAGES` | 판판대로 최대 조회 페이지 수 | `5` |
+
+## 수집 출처
+
+- 기업마당 지원사업 API: `https://www.bizinfo.go.kr/uss/rss/bizinfoApi.do`
+- 기업마당 행사 API: `https://www.bizinfo.go.kr/uss/rss/bizinfoEventApi.do`
+- 판판대로 지원사업 공고: `https://fanfandaero.kr/portal/v2/preSprtBizPbanc.do`
 
 ---
 

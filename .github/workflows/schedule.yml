@@ -21,12 +21,17 @@ jobs:
       - name: Install dependencies
         run: pip install -r requirements.txt
 
-      - name: Restore notification cache
+      - name: Restore bot state cache
         uses: actions/cache/restore@v4
         with:
-          path: data/notified_keys.json
-          key: notified-${{ github.run_id }}
-          restore-keys: notified-
+          path: |
+            data/notified_keys.json
+            data/decisions.jsonl
+            data/bot.db
+          key: bot-state-${{ github.run_id }}
+          restore-keys: |
+            bot-state-
+            notified-
 
       - name: Run Bot
         env:
@@ -42,10 +47,13 @@ jobs:
           PROFILE_MIN_SCORE: ${{ secrets.PROFILE_MIN_SCORE }}
         run: python -m src.run_once
 
-      - name: Save notification cache
+      - name: Save bot state cache
         if: always()
         uses: actions/cache/save@v4
         with:
-          path: data/notified_keys.json
-          key: notified-${{ github.run_id }}
+          path: |
+            data/notified_keys.json
+            data/decisions.jsonl
+            data/bot.db
+          key: bot-state-${{ github.run_id }}
 # schedule rebound 2026-04-28T05:04:02Z

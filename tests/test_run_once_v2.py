@@ -33,6 +33,7 @@ def test_graded_notification_format():
     ]
     msg = format_graded_message(grade_a, grade_b, total_checked=50, stage1_passed=10)
     assert "🔴" in msg
+    assert "[기업마당]" in msg
     assert "보안장비 지원" in msg
     assert "KC 인증 대상" in msg
     assert "🟡" in msg
@@ -68,3 +69,24 @@ def test_fallback_message_has_warning():
     msg = format_fallback_message(items)
     assert "⚠️" in msg
     assert "테스트" in msg
+
+
+def test_keyword_fallback_skips_hard_rejected_items():
+    from src.run_once import _run_keyword_fallback
+
+    profile = {
+        "interests": '["홈쇼핑", "MRO"]',
+        "include_keywords": '["홈쇼핑", "MRO"]',
+        "exclude_keywords": "[]",
+        "region_allow": '["전국"]',
+        "min_score": 10,
+        "due_days_threshold": 7,
+    }
+    items = [
+        {"program_key": "x:1", "title": "TV홈쇼핑 입점지원", "summary_raw": "온라인쇼핑몰"},
+        {"program_key": "x:2", "title": "MRO 공공조달 컨설팅", "summary_raw": "입찰 지원"},
+    ]
+
+    recs = _run_keyword_fallback(items, profile)
+
+    assert [rec["item"]["program_key"] for rec in recs] == ["x:2"]

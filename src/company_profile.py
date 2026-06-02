@@ -23,6 +23,7 @@ _STAGE1_SYSTEM = """당신은 정부지원사업 사전 분류기입니다.
 - 회사의 업종(제조업, 보안장비, 건설, SW), 규모(소기업), 소재지(경기)와 조금이라도 접점이 있으면 PASS
 - 식품, 농수산, 뷰티, 섬유, 의료/바이오, 관광 등 명백히 다른 업종만 REJECT
 - 일반적 중소기업 지원(수출, 인증, 디지털전환, R&D 등)은 PASS
+- 판로/마케팅/홈쇼핑 공고는 MRO, 공공조달, 산업재, 보안장비, 제조, 수출과 연결될 가능성이 있을 때만 PASS
 - 판단이 애매하면 반드시 PASS"""
 
 _STAGE2_SYSTEM = """당신은 정부지원사업 적격성 심사관입니다.
@@ -42,6 +43,7 @@ A = 자격 요건이 충족되고 회사 사업과 직접 관련됨
 B = 일부 관련되거나 자격 요건을 공고만으로 확인할 수 없음
 C = 자격 미충족이 명확하거나 사업 영역과 무관함
 
+소비재 온라인판매, 홈쇼핑, MD상담, 뷰티/푸드/패션 등은 MRO·공공조달·산업재·보안장비와 직접 연결되지 않으면 C로 판단하세요.
 reason은 핵심 정보만 포함 (지원금액, 대상, 마감일 등)."""
 
 
@@ -50,7 +52,10 @@ def build_stage1_prompt(programs: list[dict]) -> str:
     for i, p in enumerate(programs, 1):
         title = (p.get("title") or "").strip()
         summary = (p.get("summary_raw") or "").strip()
-        lines.append(f"{i}. {title} | {summary}")
+        agency = (p.get("agency") or "").strip()
+        category = (p.get("category_l1") or "").strip()
+        region = (p.get("region_raw") or "").strip()
+        lines.append(f"{i}. {title} | {summary} | 기관: {agency} | 유형: {category} | 지역: {region}")
 
     system = _STAGE1_SYSTEM.format(profile=COMPANY_PROFILE)
     listing = "\n".join(lines)
@@ -59,5 +64,18 @@ def build_stage1_prompt(programs: list[dict]) -> str:
 
 def build_stage2_prompt(program: dict, detail_text: str) -> str:
     title = (program.get("title") or "").strip()
+    source = (program.get("source") or "").strip()
+    summary = (program.get("summary_raw") or "").strip()
+    agency = (program.get("agency") or "").strip()
+    category = (program.get("category_l1") or "").strip()
+    region = (program.get("region_raw") or "").strip()
+    period = (program.get("apply_period_raw") or "").strip()
+    url = (program.get("url") or "").strip()
+    detail = (detail_text or "").strip() or "상세페이지 텍스트 없음"
     system = _STAGE2_SYSTEM.format(profile=COMPANY_PROFILE)
-    return f"{system}\n\n[공고 상세]\n제목: {title}\n내용:\n{detail_text}"
+    return (
+        f"{system}\n\n[공고 메타]\n"
+        f"출처: {source}\n제목: {title}\n요약: {summary}\n기관: {agency}\n"
+        f"유형: {category}\n지역: {region}\n접수기간: {period}\nURL: {url}\n\n"
+        f"[공고 상세]\n{detail}"
+    )

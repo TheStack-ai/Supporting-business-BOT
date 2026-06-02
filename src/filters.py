@@ -2,6 +2,96 @@ import json
 from datetime import datetime
 from typing import Dict, List, Any, Tuple
 
+HARD_EXCLUDE_KEYWORDS = [
+    "뷰티",
+    "푸드",
+    "패션",
+    "식품",
+    "농수산",
+    "수산물",
+    "농식품",
+    "화장품",
+    "미용",
+    "의류",
+    "섬유",
+    "관광",
+    "의료",
+    "바이오",
+]
+
+CONSUMER_CHANNEL_KEYWORDS = [
+    "tv홈쇼핑",
+    "홈쇼핑",
+    "온라인쇼핑몰",
+    "온라인 쇼핑몰",
+    "스마트스토어",
+    "md 상담",
+    "디지털커머스",
+    "판판셀러",
+    "소담스퀘어",
+    "무신사",
+    "플래그십 스토어",
+    "동반성장몰",
+    "전용판매장",
+    "면세점",
+    "면세장",
+]
+
+DIRECT_RELEVANCE_KEYWORDS = [
+    "mro",
+    "공공조달",
+    "조달",
+    "입찰",
+    "제조",
+    "스마트제조",
+    "보안",
+    "차량",
+    "방호",
+    "차단",
+    "볼라드",
+    "출입통제",
+    "안전",
+    "수출",
+    "해외",
+    "인증",
+    "kc",
+    "r&d",
+    "기술개발",
+    "시범구매",
+    "소프트웨어",
+    "sw",
+]
+
+
+def _combined_text(program: Dict[str, Any]) -> str:
+    text_fields = [
+        program.get('title', ''),
+        program.get('summary_raw', ''),
+        program.get('agency', ''),
+        program.get('category_l1', ''),
+        program.get('region_raw', ''),
+    ]
+    return " ".join([str(t) for t in text_fields if t]).lower()
+
+
+def is_obviously_irrelevant(program: Dict[str, Any]) -> Tuple[bool, str]:
+    """Conservative hard filter for public-sector notices clearly outside CyBarrier."""
+    combined = _combined_text(program)
+    for kw in HARD_EXCLUDE_KEYWORDS:
+        if kw.lower() in combined:
+            return True, f"명백한 타 업종 키워드({kw})"
+
+    has_direct_relevance = any(kw.lower() in combined for kw in DIRECT_RELEVANCE_KEYWORDS)
+    if has_direct_relevance:
+        return False, ""
+
+    for kw in CONSUMER_CHANNEL_KEYWORDS:
+        if kw.lower() in combined:
+            return True, f"소비재 판로 중심 키워드({kw})"
+
+    return False, ""
+
+
 def check_exclude(program: Dict[str, Any], profile: Dict[str, Any]) -> bool:
     raw = profile.get('exclude_keywords', '[]')
     if not raw or not raw.strip():

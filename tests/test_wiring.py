@@ -7,7 +7,7 @@ from unittest.mock import MagicMock, patch
 @patch("src.main.start_scheduler")
 @patch("src.main.ApplicationBuilder") # mocked inside create_app if importing there?
 # Actually main imports create_app from telegram_bot.
-def test_main_wiring(mock_start_sched, mock_create_app, mock_init_db):
+def test_main_wiring(mock_application_builder, mock_start_sched, mock_create_app, mock_init_db):
     from src.main import main
     
     # Set env

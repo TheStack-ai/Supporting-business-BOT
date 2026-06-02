@@ -1,6 +1,7 @@
 import os
 import logging
 from dotenv import load_dotenv
+from telegram.ext import ApplicationBuilder
 
 # Load environment variables first
 load_dotenv()

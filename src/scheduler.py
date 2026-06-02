@@ -2,8 +2,10 @@ from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
 from pytz import timezone
 import logging
+import os
 from .bizinfo_client import BizinfoClient
-from .normalizer import normalize_support, normalize_event
+from .fanfandaero_client import FanfandaeroClient
+from .normalizer import normalize_support, normalize_event, normalize_fanfandaero_support
 from .db import upsert_program, log_ingestion_run, get_profile
 from datetime import datetime, timedelta
 import asyncio
@@ -13,6 +15,7 @@ kst = timezone('Asia/Seoul')
 
 scheduler = AsyncIOScheduler(timezone=kst)
 client = BizinfoClient()
+fanfandaero_client = FanfandaeroClient()
 
 async def ingest_support():
     logger.info("Starting Support Ingestion")
@@ -82,6 +85,36 @@ async def ingest_event():
         
     log_ingestion_run(run_log)
     logger.info("Finished Event Ingestion")
+
+async def ingest_fanfandaero_support():
+    logger.info("Starting Fanfandaero Support Ingestion")
+    run_log = {
+        "run_at": datetime.now().isoformat(),
+        "kind": "fanfandaero_support",
+        "fetched_count": 0,
+        "new_count": 0,
+        "updated_count": 0,
+        "error": None
+    }
+
+    try:
+        items = fanfandaero_client.fetch_support_programs()
+        run_log["fetched_count"] = len(items)
+
+        for item in items:
+            try:
+                normalized = normalize_fanfandaero_support(item)
+                upsert_program(normalized)
+                run_log["new_count"] += 1
+            except Exception as e:
+                logger.error(f"Error normalizing/upserting Fanfandaero item: {e}")
+
+    except Exception as e:
+        run_log["error"] = str(e)
+        logger.error(f"Fanfandaero ingestion failed: {e}")
+
+    log_ingestion_run(run_log)
+    logger.info("Finished Fanfandaero Support Ingestion")
 
 async def run_digest_job(bot_app):
     """
@@ -179,6 +212,9 @@ def start_scheduler(bot_app):
     
     scheduler.add_job(ingest_event, CronTrigger(hour=8, minute=0, timezone=kst))
     scheduler.add_job(ingest_event, CronTrigger(hour=18, minute=0, timezone=kst))
+
+    scheduler.add_job(ingest_fanfandaero_support, CronTrigger(hour=8, minute=0, timezone=kst))
+    scheduler.add_job(ingest_fanfandaero_support, CronTrigger(hour=18, minute=0, timezone=kst))
     
     # Digest job
     # Fetch time from profile?

@@ -6,9 +6,16 @@ from typing import List, Optional, Any
 
 DB_PATH = os.getenv("DB_PATH", "data/bot.db")
 
+
+def get_db_path() -> str:
+    return os.getenv("DB_PATH") or DB_PATH
+
 def get_connection():
-    os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
-    conn = sqlite3.connect(DB_PATH)
+    db_path = get_db_path()
+    db_dir = os.path.dirname(db_path)
+    if db_dir:
+        os.makedirs(db_dir, exist_ok=True)
+    conn = sqlite3.connect(db_path)
     conn.row_factory = sqlite3.Row
     return conn
 
@@ -95,7 +102,10 @@ def init_db():
         env_excludes = os.getenv("PROFILE_EXCLUDES")
         env_excludes = env_excludes if env_excludes and env_excludes.strip() else '[]'
         env_min_score_str = os.getenv("PROFILE_MIN_SCORE")
-        env_min_score = int(env_min_score_str) if env_min_score_str and env_min_score_str.strip() else 0
+        try:
+            env_min_score = int(env_min_score_str) if env_min_score_str and env_min_score_str.strip() else 60
+        except ValueError:
+            env_min_score = 60
         
         default_profile = (
             1,

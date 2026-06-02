@@ -16,6 +16,7 @@ def log_decision(
     entry = {
         "ts": datetime.now().isoformat(),
         "key": program.get("program_key", ""),
+        "source": program.get("source", ""),
         "title": program.get("title", ""),
         "grade": grade,
         "reason": reason,
