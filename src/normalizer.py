@@ -84,7 +84,7 @@ def normalize_event(item: Dict[str, Any]) -> Dict[str, Any]:
         "event_start_at": event_start,
         "event_end_at": event_end,
         "url": url or f"https://www.bizinfo.go.kr/web/ext/retrieveDtlNews.do?pblancId={seq}",
-        "created_at_source": item.get('regDate') or item.get('creatPnttm'),
+        "created_at_source": item.get('registDe') or item.get('regDate') or item.get('creatPnttm'),
         "updated_at_source": None,
         "ingested_at": datetime.now().isoformat()
     }

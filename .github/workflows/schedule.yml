@@ -4,9 +4,19 @@ on:
   schedule:
     - cron: '0 23,9 * * *'
   workflow_dispatch:
+    inputs:
+      mode:
+        description: 'run sends normal alerts; verify and recover never send'
+        type: choice
+        options: [run, verify, recover]
+        default: run
+      recovery_since:
+        description: 'For one-time recovery only: ISO time of the last successful run'
+        type: string
+        default: ''
 
 permissions:
-  contents: read
+  contents: write
 
 concurrency:
   group: sole-search-bot
@@ -14,6 +24,7 @@ concurrency:
 
 jobs:
   run-bot:
+    if: github.event_name == 'workflow_dispatch' || vars.BOT_STATE_READY == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 60
     steps:
@@ -31,21 +42,20 @@ jobs:
       - name: Run tests
         run: python -m pytest -q
 
-      - name: Restore bot state cache
-        uses: actions/cache/restore@v6
-        with:
-          path: |
-            data/notified_keys.json
-            data/program_state.json
-            data/decisions.jsonl
-            data/bot.db
-          key: bot-state-${{ github.run_id }}
-          restore-keys: |
-            bot-state-
-            notified-
-
-      - name: Run Bot
+      - name: Restore durable encrypted bot state
+        id: restore
+        if: inputs.mode != 'recover'
         env:
+          STATE_ENCRYPTION_KEY: ${{ secrets.STATE_ENCRYPTION_KEY }}
+        run: python -m src.state_archive restore data
+
+      - name: Run or verify bot
+        id: execute
+        env:
+          REQUEST_MODE: ${{ inputs.mode || 'run' }}
+          RECOVERY_SINCE: ${{ inputs.recovery_since }}
+          REQUIRE_DURABLE_STATE: 'true'
+          BOT_DRY_RUN: ${{ inputs.mode == 'verify' }}
           BIZINFO_SUPPORT_KEY: ${{ secrets.BIZINFO_SUPPORT_KEY }}
           BIZINFO_EVENT_KEY: ${{ secrets.BIZINFO_EVENT_KEY }}
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
@@ -56,15 +66,22 @@ jobs:
           PROFILE_KEYWORDS: ${{ secrets.PROFILE_KEYWORDS }}
           PROFILE_EXCLUDES: ${{ secrets.PROFILE_EXCLUDES }}
           PROFILE_MIN_SCORE: ${{ secrets.PROFILE_MIN_SCORE }}
-        run: python -m src.run_once
+        run: |
+          if [ "$REQUEST_MODE" = recover ]; then
+            test -n "$RECOVERY_SINCE"
+            python -m src.recovery_state --since "$RECOVERY_SINCE" --data-dir data
+          else
+            python -m src.run_once
+          fi
 
-      - name: Save bot state cache
-        if: always()
-        uses: actions/cache/save@v6
-        with:
-          path: |
-            data/notified_keys.json
-            data/program_state.json
-            data/decisions.jsonl
-            data/bot.db
-          key: bot-state-${{ github.run_id }}
+      - name: Persist durable encrypted bot state
+        if: always() && ((inputs.mode == 'recover' && steps.execute.outcome == 'success') || (inputs.mode != 'recover' && inputs.mode != 'verify' && steps.restore.outcome == 'success'))
+        env:
+          STATE_ENCRYPTION_KEY: ${{ secrets.STATE_ENCRYPTION_KEY }}
+          REQUEST_MODE: ${{ inputs.mode || 'run' }}
+        run: |
+          if [ "$REQUEST_MODE" = recover ]; then
+            python -m src.state_archive save data --initialize
+          else
+            python -m src.state_archive save data
+          fi

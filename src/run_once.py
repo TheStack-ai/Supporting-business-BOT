@@ -1,5 +1,6 @@
 import logging
 import os
+import json
 
 import anyio
 from dotenv import load_dotenv
@@ -25,6 +26,14 @@ from src.program_selection import (
     run_keyword_fallback as _run_keyword_fallback,
 )
 from src.program_state import ChangeKind, classify_programs, load_program_state
+from src.recovery_state import (
+    filter_recovery_programs,
+    isolated_state_copy,
+    load_recovery_state,
+    recovery_report,
+    save_recovery_state,
+    validate_required_state,
+)
 from src.source_coverage import (
     format_coverage_manifest,
     has_degraded_sources,
@@ -117,6 +126,16 @@ def _grade_programs(
 
 
 async def run_once() -> None:
+    if os.getenv("REQUIRE_DURABLE_STATE", "").lower() == "true":
+        validate_required_state()
+    if os.getenv("BOT_DRY_RUN", "").lower() == "true":
+        with isolated_state_copy():
+            await _run_once(dry_run=True)
+    else:
+        await _run_once(dry_run=False)
+
+
+async def _run_once(*, dry_run: bool) -> None:
     init_db()
     profile = get_profile()
     outcome = _ingest_all(BizinfoClient())
@@ -131,7 +150,19 @@ async def run_once() -> None:
     notified = load_notified_keys(_cache_path())
     previous = load_program_state(os.getenv("PROGRAM_STATE_PATH", "data/program_state.json"))
     changes = classify_programs(all_items, previous, notified)
-    all_actionable_items = _programs_to_process(changes)
+    recovery = load_recovery_state()
+    recovery_candidates = [
+        dict(change.program, _change_kind=change.kind.value)
+        for change in changes if change.kind is not ChangeKind.UNCHANGED
+    ]
+    _eligible, held_keys = filter_recovery_programs(recovery_candidates, recovery)
+    all_actionable_items = [
+        program for program in _programs_to_process(changes)
+        if str(program.get("program_key") or "") not in held_keys
+    ]
+    if recovery is not None:
+        held_keys |= set(recovery["held"])
+        save_recovery_state(recovery)
     actionable_items = prioritize_programs(all_actionable_items, _max_programs_per_run())
     deferred_count = len(all_actionable_items) - len(actionable_items)
     logger.info(
@@ -142,6 +173,15 @@ async def run_once() -> None:
         deferred_count,
         len(all_items),
     )
+    report = recovery_report(recovery, selected=len(actionable_items), deferred=deferred_count,
+                             collected=len(all_items), dry_run=dry_run)
+    logger.info("Recovery selection %s", json.dumps(report, ensure_ascii=False))
+    if github_summary_path:
+        with open(github_summary_path, "a", encoding="utf-8") as stream:
+            stream.write("\n### Recovery selection\n\n```json\n" + json.dumps(report, ensure_ascii=False, indent=2) + "\n```\n")
+    if dry_run:
+        logger.info("Dry run complete: no AI calls, no Telegram sends, production state unchanged")
+        return
 
     token = os.getenv("TELEGRAM_BOT_TOKEN", "").strip()
     chat_id = os.getenv("TELEGRAM_ALLOWED_CHAT_ID", "").strip()
@@ -161,6 +201,7 @@ async def run_once() -> None:
         if change.kind is ChangeKind.NEW
         and change.program.get("program_key")
         and str(change.program["program_key"]) not in actionable_keys
+        and str(change.program["program_key"]) not in held_keys
     }
     handled_keys = notified | ignored_keys | {
         str(item["program_key"])
