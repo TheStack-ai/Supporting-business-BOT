@@ -1,7 +1,7 @@
 import logging
 import os
 import json
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
 import anyio
@@ -79,6 +79,31 @@ async def _send_messages(bot: Bot, chat_id: str, messages: tuple[str, ...]) -> N
     for message in messages:
         await bot.send_message(chat_id=chat_id, text=message, parse_mode="HTML",
                                link_preview_options=LinkPreviewOptions(is_disabled=True))
+
+
+def _persist_processing_progress(all_items, previous, coverage, changes,
+                                 actionable_keys, notified, completed_keys):
+    # A collection snapshot is also the comparison point for change alerts.
+    # Do not consume a change merely because its assessment was deferred or
+    # failed. Keep the prior comparison point until this version is handled.
+    unresolved_changes = {
+        str(change.program.get("program_key") or "")
+        for change in changes
+        if change.kind is ChangeKind.CHANGED
+        and str(change.program.get("program_key") or "") in actionable_keys - completed_keys
+    }
+    snapshots = [
+        {**program, **asdict(previous[str(program["program_key"])])}
+        if str(program.get("program_key") or "") in unresolved_changes
+        and str(program.get("program_key") or "") in previous
+        else program
+        for program in all_items
+    ]
+    _persist_program_state(snapshots, previous, coverage)
+    # Existing handled history is not an assessment retry flag. In particular,
+    # an unresolved change must not turn a previously handled notice into NEW.
+    save_notified_keys(notified | completed_keys, _cache_path())
+    clear_handled(completed_keys)
 
 
 @dataclass
@@ -266,20 +291,19 @@ async def _run_once(*, dry_run: bool, preview: bool = False) -> None:
         and str(change.program["program_key"]) not in actionable_keys
         and str(change.program["program_key"]) not in held_keys
     }
-    handled_keys = notified | ignored_keys | fit_rejected | {
+    completed_keys = ignored_keys | fit_rejected | {
         str(item["program_key"])
         for item in actionable_items
         if item.get("program_key")
     }
-    handled_keys -= qualification_pending | waiting_keys
+    completed_keys -= qualification_pending | waiting_keys
     if not actionable_items:
         messages = ()
         if has_degraded_sources(outcome.coverage):
             messages = messages_with_coverage("<b>수집 상태 확인</b>\n일부 출처를 끝까지 확인하지 못했습니다.", coverage_notice)
         await publish(messages)
-        _persist_program_state(all_items, previous, outcome.coverage)
-        save_notified_keys(handled_keys, _cache_path())
-        clear_handled(handled_keys)
+        _persist_processing_progress(all_items, previous, outcome.coverage, changes,
+                                     actionable_keys, notified, completed_keys)
         logger.info("No new or changed actionable programs")
         return
 
@@ -297,13 +321,12 @@ async def _run_once(*, dry_run: bool, preview: bool = False) -> None:
                 coverage_notice,
             )
         await publish(messages)
-        _persist_program_state(all_items, previous, outcome.coverage)
-        save_notified_keys(handled_keys, _cache_path())
-        clear_handled(handled_keys)
+        _persist_processing_progress(all_items, previous, outcome.coverage, changes,
+                                     actionable_keys, notified, completed_keys)
         return
 
     graded = _grade_programs(actionable_items)
-    handled_keys -= graded.pending.keys()
+    completed_keys -= graded.pending.keys()
     for program in actionable_items:
         key = str(program.get("program_key") or "")
         if key in graded.pending:
@@ -316,9 +339,8 @@ async def _run_once(*, dry_run: bool, preview: bool = False) -> None:
                                    len(actionable_items), graded.stage1_passed), deferred_count)
         messages = messages_with_coverage(body, coverage_notice)
     await publish(messages)
-    _persist_program_state(all_items, previous, outcome.coverage)
-    save_notified_keys(handled_keys, _cache_path())
-    clear_handled(handled_keys)
+    _persist_processing_progress(all_items, previous, outcome.coverage, changes,
+                                 actionable_keys, notified, completed_keys)
 
 
 if __name__ == "__main__":
