@@ -20,7 +20,7 @@ def test_bizinfo_fetch_paginates_until_empty(monkeypatch):
 
     calls = []
 
-    def fake_get(url, params, timeout):
+    def fake_get(_session, url, params, timeout):
         calls.append(params["pageIndex"])
         if params["pageIndex"] == 1:
             return FakeResponse({"jsonArray": [{"pblancId": "1"}]})
@@ -28,7 +28,7 @@ def test_bizinfo_fetch_paginates_until_empty(monkeypatch):
             return FakeResponse({"jsonArray": [{"pblancId": "2"}]})
         return FakeResponse({"jsonArray": []})
 
-    monkeypatch.setattr("src.bizinfo_client.requests.get", fake_get)
+    monkeypatch.setattr("src.bizinfo_client.requests.Session.get", fake_get)
 
     items = BizinfoClient().fetch_support_programs()
 
@@ -43,11 +43,11 @@ def test_bizinfo_fetch_stops_when_page_repeats(monkeypatch):
 
     calls = []
 
-    def fake_get(url, params, timeout):
+    def fake_get(_session, url, params, timeout):
         calls.append(params["pageIndex"])
         return FakeResponse({"jsonArray": [{"pblancId": "1"}, {"pblancId": "2"}]})
 
-    monkeypatch.setattr("src.bizinfo_client.requests.get", fake_get)
+    monkeypatch.setattr("src.bizinfo_client.requests.Session.get", fake_get)
 
     items = BizinfoClient().fetch_support_programs()
 

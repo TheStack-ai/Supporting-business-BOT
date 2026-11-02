@@ -29,6 +29,7 @@ def client(monkeypatch):
     monkeypatch.setenv("BIZINFO_EVENT_KEY", "fake-event-key")
     monkeypatch.setenv("BIZINFO_PAGE_UNIT", "100")
     monkeypatch.delenv("BIZINFO_MAX_PAGES", raising=False)
+    monkeypatch.setattr("src.bizinfo_client.time.sleep", lambda _seconds: None)
     return BizinfoClient()
 
 
@@ -39,13 +40,13 @@ def items(start, count, total=None):
 
 def install_pages(monkeypatch, pages):
     calls = []
-    def get(_url, params, timeout):
+    def get(_session, _url, params, timeout):
         calls.append(dict(params))
-        result = pages[len(calls) - 1]
+        result = pages[min(len(calls) - 1, len(pages) - 1)]
         if isinstance(result, Exception):
             raise result
         return result if isinstance(result, Response) else Response(result)
-    monkeypatch.setattr("src.bizinfo_client.requests.get", get)
+    monkeypatch.setattr("src.bizinfo_client.requests.Session.get", get)
     return calls
 
 
@@ -185,10 +186,11 @@ def test_page_cap_is_bounded_and_reported(client, monkeypatch):
 def test_time_cap_is_bounded_and_reported(client, monkeypatch):
     clock = [0]
     monkeypatch.setattr("src.bizinfo_client.time.monotonic", lambda: clock[0])
-    def get(_url, params, timeout):
+    monkeypatch.setattr("src.bizinfo_client.MAX_SECONDS", 120)
+    def get(_session, _url, params, timeout):
         clock[0] = 121
         return Response({"jsonArray": items(0, 100, 250)})
-    monkeypatch.setattr("src.bizinfo_client.requests.get", get)
+    monkeypatch.setattr("src.bizinfo_client.requests.Session.get", get)
     assert len(client.fetch_support_programs()) == 100
     assert batch(client).status is CollectionStatus.PARTIAL
     assert termination(client) == "time_cap"
@@ -198,7 +200,7 @@ def test_missing_key_never_requests_and_replaces_previous_metadata(client, monke
     install_pages(monkeypatch, [{"jsonArray": [], "totCnt": 0}])
     client.fetch_support_programs()
     client.support_key = None
-    monkeypatch.setattr("src.bizinfo_client.requests.get", lambda *a, **k: pytest.fail("no key"))
+    monkeypatch.setattr("src.bizinfo_client.requests.Session.get", lambda *a, **k: pytest.fail("no key"))
     assert client.fetch_support_programs() == []
     assert batch(client).status is CollectionStatus.FAILED
     assert termination(client) == "missing_key"

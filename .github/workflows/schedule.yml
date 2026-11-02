@@ -6,9 +6,9 @@ on:
   workflow_dispatch:
     inputs:
       mode:
-        description: 'run sends alerts; preview assesses without sending; verify checks without AI'
+        description: 'run sends; collect_verify checks full Bizinfo; repair_collection stores without sending'
         type: choice
-        options: [run, verify, recover, probe, transport_probe, preview]
+        options: [run, verify, recover, probe, transport_probe, preview, collect_verify, repair_collection]
         default: run
       recovery_since:
         description: 'For one-time recovery only: ISO time of the last successful run'
@@ -77,12 +77,17 @@ jobs:
           elif [ "$REQUEST_MODE" = recover ]; then
             test -n "$RECOVERY_SINCE"
             python -m src.recovery_state --since "$RECOVERY_SINCE" --data-dir data
+          elif [ "$REQUEST_MODE" = collect_verify ]; then
+            python -m src.bizinfo_repair --data-dir data --report audit/bizinfo-collection.json
+          elif [ "$REQUEST_MODE" = repair_collection ]; then
+            python -m src.bizinfo_repair --data-dir data --report audit/bizinfo-collection.json --apply
           else
             python -m src.run_once
           fi
 
       - name: Persist durable encrypted bot state
-        if: always() && ((inputs.mode == 'recover' && steps.execute.outcome == 'success') || ((inputs.mode == '' || inputs.mode == 'run') && steps.restore.outcome == 'success'))
+        id: persist
+        if: always() && (((inputs.mode == 'recover' || inputs.mode == 'repair_collection') && steps.execute.outcome == 'success') || ((inputs.mode == '' || inputs.mode == 'run') && steps.restore.outcome == 'success'))
         env:
           STATE_ENCRYPTION_KEY: ${{ secrets.STATE_ENCRYPTION_KEY }}
           REQUEST_MODE: ${{ inputs.mode || 'run' }}
@@ -92,6 +97,24 @@ jobs:
           else
             python -m src.state_archive save data
           fi
+
+      - name: Verify persisted recovered notices
+        if: inputs.mode == 'repair_collection' && steps.persist.outcome == 'success'
+        env:
+          STATE_ENCRYPTION_KEY: ${{ secrets.STATE_ENCRYPTION_KEY }}
+        run: |
+          restored_dir="$RUNNER_TEMP/bizinfo-restored"
+          python -m src.state_archive restore "$restored_dir"
+          cmp data/.state-revision "$restored_dir/.state-revision"
+          python -m src.bizinfo_repair --data-dir "$restored_dir" --verify-report audit/bizinfo-collection.json --report audit/bizinfo-restored.json
+
+      - name: Retain Bizinfo collection evidence
+        if: always() && (inputs.mode == 'collect_verify' || inputs.mode == 'repair_collection')
+        uses: actions/upload-artifact@v4
+        with:
+          name: bizinfo-collection-${{ github.run_id }}
+          path: audit/*.json
+          retention-days: 14
 
       - name: Retain no-send notification preview
         if: inputs.mode == 'preview' && steps.execute.outcome == 'success'
