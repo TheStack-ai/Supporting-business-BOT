@@ -1,6 +1,8 @@
 """Bounded, read-only pagination diagnostic. Never prints credentials or URLs."""
 import json
 import os
+import sys
+import time
 from concurrent.futures import ThreadPoolExecutor
 
 import requests
@@ -51,7 +53,41 @@ def inspect(spec):
     }
 
 
-if __name__ == "__main__":
+def transport_probe():
+    """Reproduce old single-attempt limits on the failed and boundary pages."""
+    for source, endpoint, key_name, pages in (
+        ("support", "bizinfoApi.do", "BIZINFO_SUPPORT_KEY", (1, 5, 13)),
+        ("event", "bizinfoEventApi.do", "BIZINFO_EVENT_KEY", (1, 2, 3)),
+    ):
+        key = os.environ.get(key_name)
+        if not key:
+            print(json.dumps({"source": source, "error_type": "key_unavailable"})); continue
+        for page in pages:
+            started = time.monotonic()
+            report = {"source": source, "page": page, "read_timeout": 10,
+                      "attempt": 1, "sent": 0, "state_changed": False}
+            try:
+                response = requests.get("https://www.bizinfo.go.kr/uss/rss/" + endpoint,
+                    params={"crtfcKey": key, "dataType": "json", "searchCnt": 0,
+                            "pageUnit": 100, "pageIndex": page}, timeout=10)
+                report["http_status"] = response.status_code
+                response.raise_for_status()
+                payload = response.json()
+                rows = payload.get("jsonArray", [])
+                rows = [rows] if isinstance(rows, dict) else rows
+                report.update(rows=len(rows), total=rows[0].get("totCnt") if rows else payload.get("totCnt"),
+                              api_error="reqErr" in payload)
+            except requests.RequestException as error:
+                report["error_type"] = type(error).__name__
+            except (ValueError, TypeError, AttributeError, KeyError):
+                report["error_type"] = "invalid_response"
+            report["elapsed_seconds"] = round(time.monotonic() - started, 3)
+            print(json.dumps(report), flush=True)
+
+
+if __name__ == "__main__" and "--transport" in sys.argv:
+    transport_probe()
+elif __name__ == "__main__":
     with ThreadPoolExecutor(max_workers=2) as pool:
         for report in pool.map(inspect, [
             ("support", "bizinfoApi.do", "BIZINFO_SUPPORT_KEY"),
