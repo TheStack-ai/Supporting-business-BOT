@@ -71,7 +71,8 @@ def test_run_once_surfaces_degraded_collection_in_telegram_and_action_summary(
 
     assert messages[0][0] == "123"
     assert "수집 상태 확인" in messages[0][1]
-    assert "기업마당 지원사업: 수집 실패" in messages[0][1]
+    assert "기업마당 지원사업: 목록을 확인하지 못했습니다" in messages[0][1]
+    assert "0개 출처 확인 · 1개 확인 필요" in messages[0][1]
     assert "수집 현황" in summary_path.read_text(encoding="utf-8")
 
 

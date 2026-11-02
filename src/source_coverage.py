@@ -50,6 +50,43 @@ def format_coverage_manifest(entries: tuple[CoverageEntry, ...]) -> str:
     return "\n".join(lines)
 
 
+def _coverage_problem(entry: CoverageEntry) -> str:
+    note = (entry.note or "").lower()
+    if entry.status is CollectionStatus.PARTIAL:
+        if "정규화" in note or "변환" in note:
+            return "일부 공고 정보를 처리하지 못했습니다"
+        if "시간 초과" in note or "timeout" in note:
+            return "연결 지연으로 일부 공고만 확인했습니다"
+        return "일부만 확인했습니다 · 추가 공고 여부 확인 필요"
+    if "시간 초과" in note or "timeout" in note:
+        return "연결 지연으로 목록을 확인하지 못했습니다"
+    if "인증" in note or "키 누락" in note or "key_missing" in note or "unauthorized" in note:
+        return "접속 설정을 확인해야 합니다"
+    return "목록을 확인하지 못했습니다"
+
+
+def format_coverage_notice(entries: tuple[CoverageEntry, ...]) -> str:
+    """Compact user notice; detailed row counts remain in the operational manifest."""
+    if not entries:
+        return "수집 범위 · 확인된 출처 없음"
+    confirmed = sum(entry.status is CollectionStatus.SUCCESS for entry in entries)
+    inactive = sum(entry.status is CollectionStatus.DISABLED for entry in entries)
+    problems = [entry for entry in entries
+                if entry.status in (CollectionStatus.PARTIAL, CollectionStatus.FAILED)]
+    if inactive == len(entries):
+        return "수집 범위 · 활성화된 출처 없음"
+    header = f"수집 범위 · {confirmed}개 출처 확인"
+    if problems:
+        header += f" · {len(problems)}개 확인 필요"
+    if inactive:
+        header += f" · {inactive}개 미사용"
+    lines = [header]
+    for entry in problems:
+        label = _SOURCE_LABELS.get(entry.source, entry.source)
+        lines.append(f"{label}: {_coverage_problem(entry)}")
+    return "\n".join(lines)
+
+
 def has_degraded_sources(entries: tuple[CoverageEntry, ...]) -> bool:
     return any(
         entry.status in (CollectionStatus.PARTIAL, CollectionStatus.FAILED)

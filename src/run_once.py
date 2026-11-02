@@ -40,6 +40,7 @@ from src.recovery_state import (
 )
 from src.source_coverage import (
     format_coverage_manifest,
+    format_coverage_notice,
     has_degraded_sources,
     write_github_step_summary,
 )
@@ -168,6 +169,7 @@ async def _run_once(*, dry_run: bool, preview: bool = False) -> None:
     outcome = _ingest_all(BizinfoClient())
     all_items = list(outcome.items)
     coverage_manifest = format_coverage_manifest(outcome.coverage)
+    coverage_notice = format_coverage_notice(outcome.coverage)
     logger.info("Collection coverage\n%s", coverage_manifest)
 
     github_summary_path = os.getenv("GITHUB_STEP_SUMMARY", "").strip()
@@ -273,7 +275,7 @@ async def _run_once(*, dry_run: bool, preview: bool = False) -> None:
     if not actionable_items:
         messages = ()
         if has_degraded_sources(outcome.coverage):
-            messages = messages_with_coverage("<b>수집 상태 확인</b>\n일부 출처를 끝까지 확인하지 못했습니다.", coverage_manifest)
+            messages = messages_with_coverage("<b>수집 상태 확인</b>\n일부 출처를 끝까지 확인하지 못했습니다.", coverage_notice)
         await publish(messages)
         _persist_program_state(all_items, previous, outcome.coverage)
         save_notified_keys(handled_keys, _cache_path())
@@ -292,7 +294,7 @@ async def _run_once(*, dry_run: bool, preview: bool = False) -> None:
             )
             messages = messages_with_coverage(
                 body,
-                coverage_manifest,
+                coverage_notice,
             )
         await publish(messages)
         _persist_program_state(all_items, previous, outcome.coverage)
@@ -312,7 +314,7 @@ async def _run_once(*, dry_run: bool, preview: bool = False) -> None:
     if graded.grade_a or graded.grade_b or has_degraded_sources(outcome.coverage):
         body = _append_backlog_note(format_graded_message(graded.grade_a, graded.grade_b,
                                    len(actionable_items), graded.stage1_passed), deferred_count)
-        messages = messages_with_coverage(body, coverage_manifest)
+        messages = messages_with_coverage(body, coverage_notice)
     await publish(messages)
     _persist_program_state(all_items, previous, outcome.coverage)
     save_notified_keys(handled_keys, _cache_path())

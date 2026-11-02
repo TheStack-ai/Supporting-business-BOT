@@ -81,6 +81,52 @@ def test_name_does_not_establish_female_enterprise_or_startup_eligibility():
     assert apply_assessment_policy(notice("볼라드 실증"),invented,"제조기업 대상").review_pending
 
 
+@pytest.mark.parametrize("summary", [
+    "지원대상: 중소 제조기업. 여성기업 가점/우대(필수 아님)",
+    "지원대상: 전체 제조기업. 우대대상: 여성기업",
+    "지원대상: 일반 제조기업, 여성기업 등",
+    "지원대상: 여성기업 또는 일반제조기업",
+    "지원대상: 일반 제조기업 및 여성기업",
+    "지원대상: 여성기업 또는 일반제조기업. 시험인증 완료는 필수",
+    "여성기업 우대, 가점 신청 시 확인서 제출 필수",
+])
+def test_optional_or_alternative_qualification_does_not_block_general_manufacturer(summary):
+    p=notice("중소 제조기업 KC 인증 지원",summary)
+    assert company_fit_status(p)=="eligible"
+    assert not assess_company_fit(p).review_requirements
+
+
+def test_optional_title_and_navigation_mentions_are_not_eligibility():
+    p=notice("여성기업 우대 KC 인증 지원", "전체 제조기업 신청 가능")
+    assert company_fit_status(p)=="eligible"
+    generic=notice("KC 인증 지원", "제조기업의 해외규격 취득을 지원합니다")
+    navigation="지원사업 분류 | 여성기업 | 청년창업 | 장애인기업\n지원대상: 전국 제조기업"
+    assert company_fit_status(generic,navigation)=="eligible"
+    assert company_fit_status(generic,"지원대상: 전체 제조기업. 메뉴: 여성기업 청년창업 장애인기업")=="eligible"
+
+
+@pytest.mark.parametrize("title,summary", [
+    ("여성기업 KC 인증 지원", "제조기업 대상"),
+    ("제조기업 KC 인증 지원", "지원대상: 여성기업만 신청 가능"),
+    ("제조기업 KC 인증 지원", "지원대상: 일반 제조기업 중 여성기업만 신청 가능"),
+    ("제조 R&D 지원", "신청자격: 창업 후 7년 이내 기업"),
+    ("제조 R&D 지원", "신청자격:\n창업 후 7년 이내 기업"),
+    ("제조 R&D 지원", "창업 후 7년 이내 기업을 대상으로 지원"),
+    ("산업재 수출 지원", "신청대상: 수출실적 보유 기업"),
+    ("산업재 수출 지원", "수출실적 필수"),
+    ("제조기업 KC 인증 지원", "신청자격: 여성기업 해당 여부 확인 필요"),
+])
+def test_dedicated_or_genuine_unknown_applicant_qualification_remains_pending(title,summary):
+    p=notice(title,summary)
+    assert company_fit_status(p)=="pending"
+    assert assess_company_fit(p).review_requirements
+
+
+def test_womens_ceo_title_still_records_unverified_qualification():
+    p=notice("여성벤처CEO 혁신아카데미", "기업 대표 교육")
+    assert "여성대표·여성기업 자격 확인" in assess_company_fit(p).review_requirements
+
+
 def test_relevance_precedes_deadline_and_capacity_is_bounded():
     urgent=(datetime.now()+timedelta(days=1)).strftime("%Y-%m-%d")
     noise=[notice("AI 미디어아트 교육",key=f"e:{i}",apply_end_at=urgent) for i in range(45)]
@@ -88,6 +134,16 @@ def test_relevance_precedes_deadline_and_capacity_is_bounded():
     assert [p["program_key"] for p in prioritize_programs(noise+[useful],40)]==["good"]
     changes=[notice("볼라드 실증",key=f"c:{i}",_change_kind="CHANGED") for i in range(50)]
     assert len(prioritize_programs(changes,40))==40
+
+
+def test_relevant_training_does_not_outrank_direct_certification_support():
+    generic_training=notice("공공조달 글로벌 무역금융 AI 교육", "제조기업의 수출 준비", key="training", kind="event")
+    certificate=notice("제조 중소기업 KC·UL 인증비 지원", "제품 해외규격 취득 비용 지원", key="certificate")
+    practical=notice("나라장터 입찰 실무·제도 설명회", "공공조달 등록과 규정 안내", key="practical", kind="event")
+    assert company_fit_status(generic_training)=="eligible"
+    assert company_fit_status(practical)=="eligible"
+    assert assess_company_fit(certificate).score > assess_company_fit(practical).score > assess_company_fit(generic_training).score
+    assert [p["program_key"] for p in prioritize_programs([generic_training,practical,certificate],2)]==["certificate","practical"]
 
 
 def test_failed_stage1_only_keeps_relevant_candidates_pending(monkeypatch):

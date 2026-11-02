@@ -74,10 +74,77 @@ _CONSUMER = re.compile(r"뷰티|화장품|푸드|식품|패션|의류|농식품|
 _IRRELEVANT_EVENT = re.compile(r"미디어\s*아트|문화예술|취미|퇴근길\s*밋업|친목|일반\s*네트워킹", re.I)
 _CORE_UNKNOWN = (
     (re.compile(r"여성\s*(?:벤처)?\s*(?:CEO|대표|기업인|창업)|여성기업|여성벤처", re.I), "여성대표·여성기업 자격 확인"),
-    (re.compile(r"청년\s*(?:창업|기업|CEO|대표)|예비\s*창업|초기\s*창업|창업\s*도약|업력\s*\d+\s*년\s*(?:이내|미만)|창업\s*\d+\s*년\s*(?:이내|미만)", re.I), "대표 연령·창업연차 요건 확인"),
+    (re.compile(r"청년\s*(?:창업|기업|CEO|대표)|예비\s*창업|초기\s*창업|창업\s*도약|업력\s*\d+\s*년\s*(?:이내|미만)|창업\s*(?:후\s*)?\d+\s*년\s*(?:이내|미만)", re.I), "대표 연령·창업연차 요건 확인"),
     (re.compile(r"사회적기업\s*(?:전용|대상|만)|장애인기업|재창업\s*(?:자|기업)|재도전\s*성공패키지", re.I), "특수 기업유형·재창업 자격 확인"),
     (re.compile(r"수출실적\s*(?:보유|필수|있는|\d)|수출\s*실적이\s*있는", re.I), "기존 수출실적 요건 확인"),
 )
+_APPLICANT_CONTEXT = re.compile(
+    r"(?:지원|신청|참여|모집|선발|선정)\s*대상|(?:신청|지원|참여)\s*(?:자격|요건|조건)|"
+    r"필수\s*요건|자격\s*요건|대상\s*기업|대상\s*[:：]"
+)
+_OPTIONAL_QUALIFICATION = re.compile(
+    r"우대|가점|가산점|선택\s*사항|필수\s*(?:아님|아닌|아니)|"
+    r"(?:여부|자격)\s*(?:와|에)?\s*(?:무관|관계\s*없)|제한\s*없"
+)
+_EXCLUSIVE_QUALIFICATION = re.compile(
+    r"만\s*(?:신청|참여|지원|대상|가능|해당)|한정|전용|"
+    r"필수(?!\s*(?:아님|아닌|아니))|반드시|의무|충족해야"
+)
+_GENERAL_APPLICANTS = re.compile(r"(?:일반|전체|모든|전국)\s*(?:중소\s*)?(?:제조\s*)?기업")
+
+
+def _qualification_parts(value: object) -> list[str]:
+    # Preserve paragraph/list boundaries so navigation categories cannot borrow
+    # an unrelated eligibility heading from later in the page.
+    text = re.sub(r"</(?:p|div|li|section)>|<br\s*/?>", "\n", str(value or ""), flags=re.I)
+    text = html.unescape(re.sub(r"<[^>]*>", " ", text))
+    return [re.sub(r"\s+", " ", part).strip()
+            for part in re.split(r"[\n\r。;!?|]+|(?<!\d)\.(?!\d)", text) if part.strip()]
+
+
+def _blocking_qualification(part: str, match: re.Match, *, title: bool) -> bool:
+    before, after = part[max(0, match.start()-100):match.start()], part[match.end():match.end()+100]
+    # The closest marker matters: a bonus can require a supporting certificate
+    # without making that bonus qualification mandatory for every applicant.
+    optional = _OPTIONAL_QUALIFICATION.search(after)
+    exclusive = _EXCLUSIVE_QUALIFICATION.search(after)
+    intrinsic_required = "필수" in match.group() and not re.match(r"\s*(?:아님|아닌|아니)", after)
+    if optional and not intrinsic_required and (not exclusive or optional.start() < exclusive.start()):
+        return False
+    if _OPTIONAL_QUALIFICATION.search(before[-30:]) and not intrinsic_required and not exclusive:
+        return False
+    if exclusive or intrinsic_required:
+        return True
+    # A list of alternatives that includes general manufacturers does not
+    # require the firm to belong to every special group in that list.
+    general = _GENERAL_APPLICANTS.search(part)
+    if general:
+        between = part[min(general.end(), match.end()):max(general.start(), match.start())]
+        if re.search(r"또는|혹은|및|등|포함|[·,/ㆍ]", between) or re.search(r"등|포함|모두", after):
+            return False
+    if title:
+        return True
+    if _APPLICANT_CONTEXT.search(before):
+        return True
+    return bool(re.match(
+        r"\s*(?:기업|사업자|대표자|창업자)?\s*(?:을|를)?\s*(?:(?:지원|신청|참여|모집)\s*)?대상|"
+        r"\s*(?:에|에게)\s*(?:한해|한하여)|"
+        r"\s*(?:확인서|증명서|등록증|인증서).{0,25}(?:제출|보유)|"
+        r"\s*(?:해당\s*)?여부.{0,12}(?:신청자격|확인\s*필요)", after))
+
+
+def _core_review_requirements(program: dict, detail_text: str) -> tuple[str, ...]:
+    parts = [(part, True) for part in _qualification_parts(program.get("title"))]
+    for value in (program.get("summary_raw"), detail_text):
+        heading = ""
+        for part in _qualification_parts(value):
+            # Carry a standalone eligibility heading into its next list item,
+            # not into unrelated navigation elsewhere on the page.
+            parts.append((heading + " " + part, False))
+            heading = part if _APPLICANT_CONTEXT.fullmatch(part.rstrip(":： ")) else ""
+    return tuple(label for pattern, label in _CORE_UNKNOWN
+                 if any(_blocking_qualification(part, match, title=is_title)
+                        for part, is_title in parts for match in pattern.finditer(part)))
 
 
 def assess_company_fit(program: dict, detail_text: str = "") -> CompanyFit:
@@ -119,7 +186,18 @@ def assess_company_fit(program: dict, detail_text: str = "") -> CompanyFit:
     elif industrial and re.search(r"지원|컨설팅|개선|사업화|생산|규제|안전보건", text):
         score, reason = 65, "산업 장비 제조와 현장 운영 개선에 활용"
 
-    review = tuple(label for pattern, label in _CORE_UNKNOWN if pattern.search(text))
+    title = str(program.get("title") or "")
+    learning = bool(re.search(r"교육|세미나|설명회|아카데미|특강|포럼|연수|컨퍼런스|밋업", title))
+    direct_funding = bool(re.search(r"지원금|바우처|인증비|시험비|제작비|개발비|보조금|시제품|설비투자", title))
+    if program.get("kind") == "event" or (learning and not direct_funding):
+        # Useful events stay eligible, but a broad procurement/export keyword
+        # must not place a training session ahead of actual product support.
+        practical = bool(re.search(r"실무|규정|규제|요건|제도|등록|입찰|계약|CBAM|인증|시험", title, re.I))
+        score = min(score, 76 if learning and practical else 68 if learning else 78)
+        if learning and score >= 60:
+            reason = "제조·조달·수출 관련 제도와 실무 지식 보완에 활용"
+
+    review = _core_review_requirements(program, detail_text)
     checks = list(review)
     if re.search(r"매출(?:액)?\s*(?:이|은|가)?\s*(?:최근|전년|연간|평균|\d)|\d+\s*억\s*(?:원)?\s*(?:이하|미만|이상)", text):
         checks.append("현재 매출과 해당 공고 기준연도 확인(2022년 매출로 대체 불가)")
