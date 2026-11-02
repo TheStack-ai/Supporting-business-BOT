@@ -21,18 +21,18 @@ def test_parse_stage1_valid():
     assert result == {1: "PASS", 2: "REJECT", 3: "PASS"}
 
 
-def test_parse_stage1_missing_entry_defaults_pass():
+def test_parse_stage1_missing_entry_remains_review():
     raw = {"results": [
         {"id": 1, "decision": "REJECT"},
     ]}
     result = parse_stage1_response(raw, total_count=2)
     assert result[1] == "REJECT"
-    assert result[2] == "PASS"
+    assert result[2] == "REVIEW"
 
 
-def test_parse_stage1_garbage_defaults_all_pass():
+def test_parse_stage1_garbage_remains_review():
     result = parse_stage1_response("garbage", total_count=3)
-    assert all(v == "PASS" for v in result.values())
+    assert all(v == "REVIEW" for v in result.values())
 
 
 def test_parse_stage2_valid():
@@ -49,10 +49,11 @@ def test_parse_stage2_valid():
     assert a.verdict is EligibilityVerdict.CONFIRMED
 
 
-def test_parse_stage2_invalid_grade_defaults_b():
+def test_parse_stage2_invalid_grade_remains_review():
     raw = {"grade": "X", "reason": "test", "eligibility": "미확인"}
     a = parse_stage2_response(raw)
-    assert a.grade == "B"
+    assert a.grade == "REVIEW"
+    assert a.review_pending
 
 
 def test_parse_stage2_never_infers_confirmed_without_explicit_verdict():
@@ -65,7 +66,8 @@ def test_parse_stage2_never_infers_confirmed_without_explicit_verdict():
 
 def test_parse_stage2_garbage():
     a = parse_stage2_response("not a dict")
-    assert a.grade == "B"
+    assert a.grade == "REVIEW"
+    assert a.review_pending
     assert a.eligibility == "미확인"
     assert a.verdict is EligibilityVerdict.NEEDS_CONFIRMATION
 
@@ -92,8 +94,8 @@ def test_parse_stage2_accepts_each_eligibility_verdict():
     assert parsed == verdicts
 
 
-def test_stage1_returns_all_on_api_failure(monkeypatch):
-    """When Gemini API fails, all programs should PASS (recall-first)."""
+def test_stage1_api_failure_keeps_relevant_programs_pending(monkeypatch):
+    """No failed evaluation is promoted to a recommendation or discarded."""
     from src import llm_filter
     from unittest.mock import MagicMock
     mock_client = MagicMock()
@@ -101,19 +103,21 @@ def test_stage1_returns_all_on_api_failure(monkeypatch):
     monkeypatch.setattr(llm_filter, "_get_gemini_client", lambda: mock_client)
 
     programs = [
-        {"title": "A", "summary_raw": "test", "program_key": "s:1"},
-        {"title": "B", "summary_raw": "test", "program_key": "s:2"},
+        {"title": "KC 인증 지원", "summary_raw": "제조기업 대상", "program_key": "s:1"},
+        {"title": "볼라드 실증 지원", "summary_raw": "차량방호 제품", "program_key": "s:2"},
     ]
     from src.llm_filter import stage1_quick_filter
     result = stage1_quick_filter(programs)
-    assert len(result) == 2
+    assert len(result) == 0
+    assert result.pending_keys == {"s:1", "s:2"}
+    assert result.rejected_keys == set()
 
 
-def test_stage2_empty_detail_returns_grade_b():
-    """Empty detail text should return B grade without calling API."""
+def test_stage2_empty_detail_is_pending_without_api():
     from src.llm_filter import stage2_assess
     # stage2_assess checks detail_text before calling API, so no mock needed
-    program = {"title": "테스트", "program_key": "s:1"}
+    program = {"title": "볼라드 실증 지원", "program_key": "s:1"}
     result = stage2_assess(program, "")
-    assert result.grade == "B"
+    assert result.grade == "REVIEW"
+    assert result.review_pending
     assert "접근 불가" in result.reason

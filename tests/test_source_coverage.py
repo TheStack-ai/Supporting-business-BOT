@@ -25,7 +25,8 @@ def test_coverage_manifest_exposes_failed_source():
 
     message = format_coverage_manifest(coverage)
 
-    assert "coverage_manifest" in message
+    assert "수집 현황" in message
+    assert "coverage_manifest" not in message
     assert "기업마당 지원사업" in message
     assert "실패" in message
     assert "연결 시간 초과" in message

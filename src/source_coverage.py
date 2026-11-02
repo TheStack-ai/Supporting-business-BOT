@@ -15,11 +15,11 @@ _SOURCE_LABELS: Final[dict[str, str]] = {
 def _status_label(status: CollectionStatus) -> str:
     match status:
         case CollectionStatus.SUCCESS:
-            return "성공"
+            return "확인"
         case CollectionStatus.PARTIAL:
-            return "부분"
+            return "일부 확인"
         case CollectionStatus.FAILED:
-            return "실패"
+            return "수집 실패"
         case CollectionStatus.DISABLED:
             return "미사용"
         case unreachable:
@@ -38,12 +38,14 @@ def _count_label(entry: CoverageEntry) -> str:
 
 
 def format_coverage_manifest(entries: tuple[CoverageEntry, ...]) -> str:
-    lines = ["📊 coverage_manifest"]
+    lines = ["수집 현황"]
     for entry in entries:
         label = _SOURCE_LABELS.get(entry.source, entry.source)
-        line = f"- {label}: {_status_label(entry.status)} ({_count_label(entry)})"
+        line = f"{label}: {_status_label(entry.status)} · {_count_label(entry)}"
         if entry.note:
-            line += f" — {entry.note}"
+            note = entry.note.replace("API 페이지 상한/반복 감지 — 전수 아님", "추가 공고 여부 확인 필요")
+            note = note.replace("0건 반환 — 접속 실패 또는 API 오류 가능", "목록을 확인하지 못했습니다")
+            line += f" — {note}"
         lines.append(line)
     return "\n".join(lines)
 

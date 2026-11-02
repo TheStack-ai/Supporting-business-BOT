@@ -1,6 +1,7 @@
 import os
 
 from src.filters import get_days_left, is_obviously_irrelevant, is_recommended
+from src.company_fit import assess_company_fit
 from src.program_state import (
     ChangeKind,
     ProgramChange,
@@ -45,15 +46,16 @@ def programs_to_process(changes: tuple[ProgramChange, ...]) -> list[ProgramRecor
 
 
 def prioritize_programs(items: list[ProgramRecord], limit: int) -> list[ProgramRecord]:
-    def priority(program: ProgramRecord) -> tuple[int, str]:
+    """Spend review capacity on company fit before deadline urgency."""
+    eligible = [(program, assess_company_fit(program)) for program in items]
+    eligible = [(program, fit) for program, fit in eligible if fit.relevant and not fit.review_requirements]
+    def priority(pair):
+        program, fit = pair
         days_left = get_days_left(program)
         deadline_rank = days_left if days_left is not None else 1_000_000
-        return deadline_rank, str(program.get("title") or "")
-
-    changed = [item for item in items if item.get("_change_kind") == ChangeKind.CHANGED]
-    new = [item for item in items if item.get("_change_kind") != ChangeKind.CHANGED]
-    remaining_slots = max(0, limit - len(changed))
-    return sorted(changed, key=priority) + sorted(new, key=priority)[:remaining_slots]
+        changed_rank = 0 if program.get("_change_kind") == ChangeKind.CHANGED else 1
+        return -fit.score, changed_rank, deadline_rank, str(program.get("title") or "")
+    return [program for program, _fit in sorted(eligible, key=priority)[:max(0, limit)]]
 
 
 def _preserved_program_sources(coverage: tuple[CoverageEntry, ...]) -> set[str]:

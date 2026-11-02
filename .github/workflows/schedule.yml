@@ -6,9 +6,9 @@ on:
   workflow_dispatch:
     inputs:
       mode:
-        description: 'run sends normal alerts; verify and recover never send'
+        description: 'run sends alerts; preview assesses without sending; verify checks without AI'
         type: choice
-        options: [run, verify, recover, probe]
+        options: [run, verify, recover, probe, preview]
         default: run
       recovery_since:
         description: 'For one-time recovery only: ISO time of the last successful run'
@@ -56,6 +56,9 @@ jobs:
           RECOVERY_SINCE: ${{ inputs.recovery_since }}
           REQUIRE_DURABLE_STATE: 'true'
           BOT_DRY_RUN: ${{ inputs.mode == 'verify' }}
+          BOT_PREVIEW_ONLY: ${{ inputs.mode == 'preview' }}
+          BOT_PREVIEW_PATH: preview/notifications.json
+          MAX_PROGRAMS_PER_RUN: ${{ inputs.mode == 'preview' && '8' || '40' }}
           BIZINFO_SUPPORT_KEY: ${{ secrets.BIZINFO_SUPPORT_KEY }}
           BIZINFO_EVENT_KEY: ${{ secrets.BIZINFO_EVENT_KEY }}
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
@@ -77,7 +80,7 @@ jobs:
           fi
 
       - name: Persist durable encrypted bot state
-        if: always() && ((inputs.mode == 'recover' && steps.execute.outcome == 'success') || (inputs.mode != 'recover' && inputs.mode != 'verify' && steps.restore.outcome == 'success'))
+        if: always() && ((inputs.mode == 'recover' && steps.execute.outcome == 'success') || ((inputs.mode == '' || inputs.mode == 'run') && steps.restore.outcome == 'success'))
         env:
           STATE_ENCRYPTION_KEY: ${{ secrets.STATE_ENCRYPTION_KEY }}
           REQUEST_MODE: ${{ inputs.mode || 'run' }}
@@ -87,3 +90,11 @@ jobs:
           else
             python -m src.state_archive save data
           fi
+
+      - name: Retain no-send notification preview
+        if: inputs.mode == 'preview' && steps.execute.outcome == 'success'
+        uses: actions/upload-artifact@v4
+        with:
+          name: notification-preview-${{ github.run_id }}
+          path: preview/notifications.json
+          retention-days: 7

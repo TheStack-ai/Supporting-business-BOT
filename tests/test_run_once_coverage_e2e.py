@@ -11,7 +11,7 @@ class FakeBot:
     def __init__(self, messages):
         self.messages = messages
 
-    async def send_message(self, chat_id, text):
+    async def send_message(self, chat_id, text, **kwargs):
         self.messages.append((chat_id, text))
 
 
@@ -44,6 +44,7 @@ def test_run_once_surfaces_degraded_collection_in_telegram_and_action_summary(
     )
     messages = []
     summary_path = tmp_path / "step-summary.md"
+    monkeypatch.setenv("DB_PATH", str(tmp_path / "bot.db"))
 
     monkeypatch.setenv("TELEGRAM_BOT_TOKEN", "token")
     monkeypatch.setenv("TELEGRAM_ALLOWED_CHAT_ID", "123")
@@ -69,12 +70,12 @@ def test_run_once_surfaces_degraded_collection_in_telegram_and_action_summary(
     anyio.run(run_once)
 
     assert messages[0][0] == "123"
-    assert "수집 누락" in messages[0][1]
-    assert "기업마당 지원사업: 실패" in messages[0][1]
-    assert "coverage_manifest" in summary_path.read_text(encoding="utf-8")
+    assert "수집 상태 확인" in messages[0][1]
+    assert "기업마당 지원사업: 수집 실패" in messages[0][1]
+    assert "수집 현황" in summary_path.read_text(encoding="utf-8")
 
 
-def test_run_once_defers_unhandled_programs_without_marking_them_notified(monkeypatch):
+def test_run_once_defers_unhandled_programs_without_marking_them_notified(tmp_path, monkeypatch):
     today = datetime.now(UTC).date()
     programs = tuple(
         {
@@ -109,6 +110,7 @@ def test_run_once_defers_unhandled_programs_without_marking_them_notified(monkey
     )
     messages = []
     saved_keys = []
+    monkeypatch.setenv("DB_PATH", str(tmp_path / "bot.db"))
 
     monkeypatch.setenv("TELEGRAM_BOT_TOKEN", "token")
     monkeypatch.setenv("TELEGRAM_ALLOWED_CHAT_ID", "123")
@@ -143,4 +145,4 @@ def test_run_once_defers_unhandled_programs_without_marking_them_notified(monkey
     anyio.run(run_once)
 
     assert saved_keys == [{"support:PBLN_2"}]
-    assert "대기 2건" in "".join(text for _, text in messages)
+    assert "적합 후보 2건" in "".join(text for _, text in messages)

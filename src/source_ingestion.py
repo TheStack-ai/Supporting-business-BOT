@@ -1,5 +1,4 @@
 import logging
-import os
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime
@@ -43,11 +42,11 @@ def _log_ingestion(
     })
 
 
-def _bizinfo_batch(source: str, raw_items: list[RawItem]) -> SourceBatch:
-    try:
-        page_size = max(1, int(os.getenv("BIZINFO_SEARCH_COUNT", "100")))
-    except ValueError:
-        page_size = 100
+def _bizinfo_batch(source: str, raw_items: list[RawItem], client=None) -> SourceBatch:
+    batches = getattr(client, "collection_batches", None)
+    batch = batches.get(source) if isinstance(batches, dict) else None
+    if isinstance(batch, SourceBatch):
+        return batch
 
     if not raw_items:
         return SourceBatch(
@@ -56,18 +55,16 @@ def _bizinfo_batch(source: str, raw_items: list[RawItem]) -> SourceBatch:
             status=CollectionStatus.FAILED,
             reported_count=None,
             fetched_count=0,
-            note="0건 반환 — 접속 실패 또는 API 오류 가능",
+            note="0건 반환 — 수집 완료 여부를 확인할 메타데이터 없음",
         )
 
-    status = CollectionStatus.PARTIAL if len(raw_items) >= page_size else CollectionStatus.SUCCESS
-    note = "API 페이지 상한/반복 감지 — 전수 아님" if status is CollectionStatus.PARTIAL else None
     return SourceBatch(
         source=source,
         items=tuple(raw_items),
-        status=status,
+        status=CollectionStatus.PARTIAL,
         reported_count=None,
         fetched_count=len(raw_items),
-        note=note,
+        note="전체 수집 여부 미확인 — 조회 메타데이터 없음",
     )
 
 
@@ -173,8 +170,8 @@ def ingest_all(
     sbiz24_own, sbiz24_combined = sbiz24.collect_all()
 
     sources: tuple[tuple[str, SourceBatch, Callable[[RawItem], ProgramRecord]], ...] = (
-        ("support", _bizinfo_batch("bizinfo_support", supports), normalize_support),
-        ("event", _bizinfo_batch("bizinfo_event", events), normalize_event),
+        ("support", _bizinfo_batch("bizinfo_support", supports, client), normalize_support),
+        ("event", _bizinfo_batch("bizinfo_event", events, client), normalize_event),
         (
             "fanfandaero_support",
             _fanfandaero_batch(fanfandaero_items, getattr(fanfandaero, "enabled", True)),

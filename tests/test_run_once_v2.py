@@ -41,12 +41,12 @@ def test_graded_notification_format():
         (_make_program("s:2", "디지털전환 컨설팅"), Assessment("B", "SW사업자 가능", "미확인")),
     ]
     msg = format_graded_message(grade_a, grade_b, total_checked=50, stage1_passed=10)
-    assert "🔴" in msg
-    assert "[기업마당]" in msg
+    assert "우선 검토 1건" in msg
+    assert "지원사업 · 기업마당" in msg
     assert "보안장비 지원" in msg
     assert "KC 인증 대상" in msg
     assert "확인됨" in msg
-    assert "🟡" in msg
+    assert "요건 확인 1건" in msg
     assert "디지털전환 컨설팅" in msg
 
 
@@ -69,22 +69,22 @@ def test_graded_notification_marks_changed_deadline():
 
 
 def test_graded_notification_b_only_heading():
-    """When only B-grade exists, heading should be '참고 사항' (softer tone)."""
+    """Conditional notices clearly name the action without an urgent recommendation."""
     from src.run_once import format_graded_message
 
     grade_b = [
         (_make_program("s:1", "일반 지원사업"), Assessment("B", "가능성 있음", "미확인")),
     ]
     msg = format_graded_message([], grade_b, total_checked=10, stage1_passed=3)
-    assert "참고 사항" in msg
-    assert "🔴" not in msg
+    assert "요건 확인" in msg
+    assert "우선 검토" not in msg
 
 
 def test_graded_notification_no_results():
     from src.run_once import format_graded_message
 
     msg = format_graded_message([], [], total_checked=50, stage1_passed=5)
-    assert "✅" in msg
+    assert "새로 추천할 공고가 없습니다" in msg
     assert "50" in msg
 
 
@@ -95,7 +95,8 @@ def test_fallback_message_has_warning():
         {"item": _make_program("s:1", "테스트"), "score": 45, "reasons": ["관심분야 일치"]},
     ]
     msg = format_fallback_message(items)
-    assert "⚠️" in msg
+    assert "상세 검토를 완료하지 못해" in msg
+    assert "요건 확인" in msg
     assert "테스트" in msg
 
 
@@ -123,11 +124,11 @@ def test_keyword_fallback_skips_hard_rejected_items():
 def test_priority_prefers_changed_then_urgent_programs():
     from src.program_selection import prioritize_programs
 
-    routine = _make_program("s:1", "상시 공고")
+    routine = _make_program("s:1", "차량방호 볼라드 상시 공고")
     routine["apply_end_at"] = None
-    urgent = _make_program("s:2", "마감 임박")
+    urgent = _make_program("s:2", "차량방호 볼라드 마감 임박")
     urgent["apply_end_at"] = "2026-07-24"
-    changed = _make_program("s:3", "변경 공고")
+    changed = _make_program("s:3", "차량방호 볼라드 변경 공고")
     changed["_change_kind"] = "CHANGED"
 
     selected = prioritize_programs([routine, urgent, changed], limit=2)
