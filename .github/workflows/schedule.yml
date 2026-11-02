@@ -8,7 +8,7 @@ on:
       mode:
         description: 'run sends normal alerts; verify and recover never send'
         type: choice
-        options: [run, verify, recover]
+        options: [run, verify, recover, probe]
         default: run
       recovery_since:
         description: 'For one-time recovery only: ISO time of the last successful run'
@@ -44,7 +44,7 @@ jobs:
 
       - name: Restore durable encrypted bot state
         id: restore
-        if: inputs.mode != 'recover'
+        if: inputs.mode != 'recover' && inputs.mode != 'probe'
         env:
           STATE_ENCRYPTION_KEY: ${{ secrets.STATE_ENCRYPTION_KEY }}
         run: python -m src.state_archive restore data
@@ -67,7 +67,9 @@ jobs:
           PROFILE_EXCLUDES: ${{ secrets.PROFILE_EXCLUDES }}
           PROFILE_MIN_SCORE: ${{ secrets.PROFILE_MIN_SCORE }}
         run: |
-          if [ "$REQUEST_MODE" = recover ]; then
+          if [ "$REQUEST_MODE" = probe ]; then
+            python scripts/probe_bizinfo.py
+          elif [ "$REQUEST_MODE" = recover ]; then
             test -n "$RECOVERY_SINCE"
             python -m src.recovery_state --since "$RECOVERY_SINCE" --data-dir data
           else
